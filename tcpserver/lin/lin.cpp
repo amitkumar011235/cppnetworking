@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <cstring>
 
+using namespace std;
 // Buffer size for receiving messages
 #define BUFFER_SIZE 1024
 
@@ -58,6 +59,7 @@ bool LinServer::initialize(int port, const std::string& ip_address) {
     return true;
 }
 
+
 void LinServer::start() {
     struct sockaddr_in client_address;
     socklen_t addrlen = sizeof(client_address);
@@ -65,31 +67,44 @@ void LinServer::start() {
 
     std::cout << "Waiting for connections..." << std::endl;
 
-    // Accept an incoming connection
-    if ((new_socket = accept(server_fd, (struct sockaddr*)&client_address, &addrlen)) < 0) {
-        std::cerr << "Accept failed!" << std::endl;
-        return;
+    while (true) {  // Infinite loop to accept connections continuously
+        // Accept an incoming connection
+        if ((new_socket = accept(server_fd, (struct sockaddr*)&client_address, &addrlen)) < 0) {
+            std::cerr << "Accept failed! Error: " << strerror(errno) << std::endl;
+            continue; // Continue to the next iteration to accept new connections
+        }
+
+        std::cout << "Connection accepted!" << std::endl;
+
+        // Handle the client in a separate function or thread
+        // For simplicity, we will handle it in-line here
+        int valread = read(new_socket, buffer, BUFFER_SIZE);
+        if (valread < 0) {
+            std::cerr << "Read failed! Error: " << strerror(errno) << std::endl;
+            close(new_socket); // Close the socket and continue to the next iteration
+            continue;
+        }
+
+        std::cout << "Received request: " << std::endl << buffer << std::endl;
+
+        // Prepare the HTTP response
+        const char* http_response = 
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: 44\r\n"
+            "\r\n"
+            "<html><body><h1>Hello from server!</h1></body></html>";
+
+        // Send the HTTP response back to the client
+        if (send(new_socket, http_response, strlen(http_response), 0) < 0) {
+            std::cerr << "Send failed! Error: " << strerror(errno) << std::endl;
+        } else {
+            std::cout << "HTTP response sent!" << std::endl;
+        }
+
+        // Close the connection with the client
+        close(new_socket);
+        new_socket = -1;
     }
-
-    std::cout << "Connection accepted!" << std::endl;
-
-    // Read the request from the client
-    int valread = read(new_socket, buffer, BUFFER_SIZE);
-    std::cout << "Received request: " << std::endl << buffer << std::endl;
-
-    // Prepare the HTTP response
-    const char* http_response = 
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html\r\n"
-        "Content-Length: 44\r\n"
-        "\r\n"
-        "<html><body><h1>Hello from server!</h1></body></html>";
-
-    // Send the HTTP response back to the client
-    send(new_socket, http_response, strlen(http_response), 0);
-    std::cout << "HTTP response sent!" << std::endl;
-
-    // Close the connection
-    close(new_socket);
-    new_socket = -1;
 }
+

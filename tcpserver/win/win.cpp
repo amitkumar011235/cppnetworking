@@ -65,41 +65,56 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
 
 void WinServer::start()
 {
-    // Accept a connection
     struct sockaddr_in clientAddress;
     int addrlen = sizeof(clientAddress);
-    SOCKET new_socket = accept(server_fd, (struct sockaddr *)&clientAddress, &addrlen);
-    if (new_socket == INVALID_SOCKET)
-    {
-        std::cerr << "Accept failed" << std::endl;
-        closesocket(server_fd);
-        WSACleanup();
-        return;
-    }
-
-    std::cout << "Connection established!" << std::endl;
-
-    // Receive data from the client
     char buffer[1024] = {0};
-    int valread = recv(new_socket, buffer, sizeof(buffer), 0);
-    if (valread > 0)
-    {
-        std::cout << "Received: " << buffer << std::endl;
+
+    std::cout << "Waiting for connections..." << std::endl;
+
+    while (true)
+    { // Infinite loop to continuously accept connections
+        // Accept a connection
+        SOCKET new_socket = accept(server_fd, (struct sockaddr *)&clientAddress, &addrlen);
+        if (new_socket == INVALID_SOCKET)
+        {
+            std::cerr << "Accept failed: " << WSAGetLastError() << std::endl;
+            continue; // Continue to the next iteration to accept new connections
+        }
+
+        std::cout << "Connection established!" << std::endl;
+
+        // Receive data from the client
+        int valread = recv(new_socket, buffer, sizeof(buffer), 0);
+        if (valread > 0)
+        {
+            std::cout << "Received: " << buffer << std::endl;
+        }
+        else
+        {
+            std::cerr << "Receive failed: " << WSAGetLastError() << std::endl;
+        }
+
+        // Send response to the client
+        const char *http_response =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: 44\r\n"
+            "\r\n"
+            "<html><body><h1>Hello from server!</h1></body></html>";
+
+        if (send(new_socket, http_response, strlen(http_response), 0) == SOCKET_ERROR)
+        {
+            std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
+        }
+        else
+        {
+            std::cout << "Hello message sent" << std::endl;
+        }
+
+        // Close the sockets
+        closesocket(new_socket);
+        std::cout << "Connection closed." << std::endl;
     }
-
-    // Send response to the client
-    const char *http_response =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html\r\n"
-        "Content-Length: 44\r\n"
-        "\r\n"
-        "<html><body><h1>Hello from server!</h1></body></html>";
-
-    send(new_socket, http_response, strlen(http_response), 0);
-    std::cout << "Hello message sent" << std::endl;
-
-    // Close the sockets
-    closesocket(new_socket);
 }
 
 WinServer::~WinServer()

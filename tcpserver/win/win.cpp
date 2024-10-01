@@ -6,6 +6,16 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
+// Initialize the static thread pool using the hardware concurrency
+ctpl::thread_pool WinServer::threadPool(WinServer::determineThreadPoolSize());
+
+// Helper function to determine the number of threads based on hardware concurrency
+int WinServer::determineThreadPoolSize()
+{
+    int concurrency = std::thread::hardware_concurrency();
+    return (concurrency > 0) ? concurrency : 4; // Default to 4 if hardware concurrency is unavailable
+}
+
 bool WinServer::initialize(int port, const std::string &ipAddress)
 {
 
@@ -64,20 +74,22 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
     return true;
 }
 
-
-void WinServer::handleClient(SOCKET clientSocket) {
+void WinServer::handleClient(SOCKET clientSocket)
+{
     char buffer[1024] = {0};
 
     // Continue to receive data until the client closes the connection
-    while (true) {
+    while (true)
+    {
         // Clear the buffer before receiving new data
         memset(buffer, 0, sizeof(buffer));
 
         // Receive data from the client
         int valread = recv(clientSocket, buffer, sizeof(buffer), 0);
-        
+
         // If the read is less than or equal to 0, the client has closed the connection
-        if (valread <= 0) {
+        if (valread <= 0)
+        {
             std::cerr << "Client disconnected or error occurred. Closing connection." << std::endl;
             break; // Exit the loop to close the connection
         }
@@ -89,13 +101,14 @@ void WinServer::handleClient(SOCKET clientSocket) {
         std::string http_response =
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/plain\r\n"
-            "Content-Length: " + std::to_string(valread) + "\r\n"
-            "\r\n" +
+            "Content-Length: " +
+            std::to_string(valread) + "\r\n"
+                                      "\r\n" +
             std::string(buffer, valread); // Echo the received data
 
         // Send the HTTP response back to the client
         send(clientSocket, http_response.c_str(), http_response.length(), 0);
-        
+
         std::cout << "Echo response sent!" << std::endl;
     }
 
@@ -103,7 +116,6 @@ void WinServer::handleClient(SOCKET clientSocket) {
     closesocket(clientSocket);
     std::cout << "Client connection closed." << std::endl;
 }
-
 
 void WinServer::start()
 {
@@ -125,9 +137,9 @@ void WinServer::start()
 
         std::cout << "Connection established!" << std::endl;
 
-        // Create a new thread to handle the client connection
-        std::thread clientThread(&WinServer::handleClient,this, client_socket);
-        clientThread.detach(); // Detach the thread to allow it to run independently
+        // Submit a task to the thread pool to handle the client
+        threadPool.push([this, client_socket](int thread_id)
+                        { this->handleClient(client_socket); });
     }
 }
 

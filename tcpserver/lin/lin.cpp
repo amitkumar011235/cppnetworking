@@ -5,21 +5,73 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include <thread>
+#include <mutex>
+
 
 using namespace std;
 // Buffer size for receiving messages
 #define BUFFER_SIZE 1024
 
-LinServer::LinServer() : server_fd(-1), new_socket(-1) {}
+mutex coutMutex; //mutex to sync the output on console . we can comment the lock code. 
+
+LinServer::LinServer() : server_fd(-1) {}
 
 LinServer::~LinServer() {
-    if (new_socket != -1) {
-        close(new_socket);
-    }
     if (server_fd != -1) {
         close(server_fd);
     }
 }
+
+void LinServer::handleClient(int client_socket) {
+    char buffer[BUFFER_SIZE] = {0};
+
+    // Continue to receive data until the client closes the connection
+    while (true) {
+        // Clear the buffer before receiving new data
+        memset(buffer, 0, sizeof(buffer));
+
+        // Receive data from the client
+        int valread = read(client_socket, buffer, BUFFER_SIZE);
+        
+        // If the read is less than or equal to 0, the client has closed the connection
+        if (valread <= 0) {
+            std::lock_guard<std::mutex> lock(coutMutex);
+            std::cout << "Client disconnected or error occurred. Closing connection." << std::endl;
+            break; // Exit the loop to close the connection
+        }
+
+        // Log the received data
+        {
+            std::lock_guard<std::mutex> lock(coutMutex);
+            std::cout << "Received: " << buffer << std::endl;
+        }
+
+        // Prepare the HTTP response
+        std::string http_response =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: " + std::to_string(valread) + "\r\n"
+            "\r\n" +
+            std::string(buffer, valread); // Echo the received data
+
+        // Send the HTTP response back to the client
+        send(client_socket, http_response.c_str(), http_response.length(), 0);
+        
+        {
+            std::lock_guard<std::mutex> lock(coutMutex);
+            std::cout << "Echo response sent!" << std::endl;
+        }
+    }
+
+    // Close the connection
+    close(client_socket);
+    {
+        std::lock_guard<std::mutex> lock(coutMutex);
+        std::cout << "Client connection closed." << std::endl;
+    }
+}
+
 
 bool LinServer::initialize(int port, const std::string& ip_address) {
     cout<<"initialising the server..."<<endl;
@@ -64,47 +116,21 @@ void LinServer::start() {
     struct sockaddr_in client_address;
     socklen_t addrlen = sizeof(client_address);
     char buffer[BUFFER_SIZE] = {0};
+    int client_socket = -1;
 
     std::cout << "Waiting for connections..." << std::endl;
 
     while (true) {  // Infinite loop to accept connections continuously
         // Accept an incoming connection
-        if ((new_socket = accept(server_fd, (struct sockaddr*)&client_address, &addrlen)) < 0) {
+        if ((client_socket = accept(server_fd, (struct sockaddr*)&client_address, &addrlen)) < 0) {
             std::cerr << "Accept failed! Error: " << strerror(errno) << std::endl;
             continue; // Continue to the next iteration to accept new connections
         }
-
         std::cout << "Connection accepted!" << std::endl;
 
-        // Handle the client in a separate function or thread
-        // For simplicity, we will handle it in-line here
-        int valread = read(new_socket, buffer, BUFFER_SIZE);
-        if (valread < 0) {
-            std::cerr << "Read failed! Error: " << strerror(errno) << std::endl;
-            close(new_socket); // Close the socket and continue to the next iteration
-            continue;
-        }
-
-        std::cout << "Received request: " << std::endl << buffer << std::endl;
-
-        // Prepare the HTTP response
-        const char* http_response = 
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "Content-Length: 44\r\n"
-            "\r\n"
-            "<html><body><h1>Hello from server!</h1></body></html>";
-
-        // Send the HTTP response back to the client
-        if (send(new_socket, http_response, strlen(http_response), 0) < 0) {
-            std::cerr << "Send failed! Error: " << strerror(errno) << std::endl;
-        } else {
-            std::cout << "HTTP response sent!" << std::endl;
-        }
-
-        // Close the connection with the client
-        close(new_socket);
-        new_socket = -1;
+        // Create a new thread to handle the client connection
+        std::thread clientThread(&LinServer::handleClient, this, client_socket);
+        clientThread.detach(); // Detach the thread to allow it to run independently
     }
 }
 

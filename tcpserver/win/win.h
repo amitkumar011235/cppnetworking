@@ -15,6 +15,7 @@ private:
 public:
     bool initialize(int port, const std::string& ipAddress = "0.0.0.0") override;
     void start() override;
+    void handleClient(SOCKET clientSocket);
     ~WinServer();
 };
 

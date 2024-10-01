@@ -19,7 +19,7 @@ int main() {
     }
 
     // Send data to server
-    std::string message = "Hello, Server!";
+    std::string message = "Hello, Server! . Lets see if you can echo";
     if (!client->sendData(message)) {
         return 1;
     }

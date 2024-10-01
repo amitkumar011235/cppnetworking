@@ -2,6 +2,7 @@
 #include <iostream>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <thread>
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -63,6 +64,47 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
     return true;
 }
 
+
+void WinServer::handleClient(SOCKET clientSocket) {
+    char buffer[1024] = {0};
+
+    // Continue to receive data until the client closes the connection
+    while (true) {
+        // Clear the buffer before receiving new data
+        memset(buffer, 0, sizeof(buffer));
+
+        // Receive data from the client
+        int valread = recv(clientSocket, buffer, sizeof(buffer), 0);
+        
+        // If the read is less than or equal to 0, the client has closed the connection
+        if (valread <= 0) {
+            std::cerr << "Client disconnected or error occurred. Closing connection." << std::endl;
+            break; // Exit the loop to close the connection
+        }
+
+        // Log the received data
+        std::cout << "Received: " << buffer << std::endl;
+
+        // Prepare the HTTP response
+        std::string http_response =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: " + std::to_string(valread) + "\r\n"
+            "\r\n" +
+            std::string(buffer, valread); // Echo the received data
+
+        // Send the HTTP response back to the client
+        send(clientSocket, http_response.c_str(), http_response.length(), 0);
+        
+        std::cout << "Echo response sent!" << std::endl;
+    }
+
+    // Close the connection
+    closesocket(clientSocket);
+    std::cout << "Client connection closed." << std::endl;
+}
+
+
 void WinServer::start()
 {
     struct sockaddr_in clientAddress;
@@ -74,8 +116,8 @@ void WinServer::start()
     while (true)
     { // Infinite loop to continuously accept connections
         // Accept a connection
-        SOCKET new_socket = accept(server_fd, (struct sockaddr *)&clientAddress, &addrlen);
-        if (new_socket == INVALID_SOCKET)
+        SOCKET client_socket = accept(server_fd, (struct sockaddr *)&clientAddress, &addrlen);
+        if (client_socket == INVALID_SOCKET)
         {
             std::cerr << "Accept failed: " << WSAGetLastError() << std::endl;
             continue; // Continue to the next iteration to accept new connections
@@ -83,37 +125,9 @@ void WinServer::start()
 
         std::cout << "Connection established!" << std::endl;
 
-        // Receive data from the client
-        int valread = recv(new_socket, buffer, sizeof(buffer), 0);
-        if (valread > 0)
-        {
-            std::cout << "Received: " << buffer << std::endl;
-        }
-        else
-        {
-            std::cerr << "Receive failed: " << WSAGetLastError() << std::endl;
-        }
-
-        // Send response to the client
-        const char *http_response =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
-            "Content-Length: 44\r\n"
-            "\r\n"
-            "<html><body><h1>Hello from server!</h1></body></html>";
-
-        if (send(new_socket, http_response, strlen(http_response), 0) == SOCKET_ERROR)
-        {
-            std::cerr << "Send failed: " << WSAGetLastError() << std::endl;
-        }
-        else
-        {
-            std::cout << "Hello message sent" << std::endl;
-        }
-
-        // Close the sockets
-        closesocket(new_socket);
-        std::cout << "Connection closed." << std::endl;
+        // Create a new thread to handle the client connection
+        std::thread clientThread(&WinServer::handleClient,this, client_socket);
+        clientThread.detach(); // Detach the thread to allow it to run independently
     }
 }
 

@@ -11,10 +11,10 @@ public:
     
     bool initialize(int port, const std::string& ip_address = "0.0.0.0") override;
     void start() override;
+    void handleClient(int client_socket) ;
 
 private:
     int server_fd;  // File descriptor for the server socket
-    int new_socket; // File descriptor for the client connection
 };
 
 #endif // LINSERVER_H

@@ -25,8 +25,12 @@
 *.la
 *.a
 *.lib
+*.pdb
 
 # Executables
 *.exe
 *.out
 *.app
+
+#build folder
+build

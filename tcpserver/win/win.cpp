@@ -74,6 +74,17 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
     return true;
 }
 
+bool WinServer::setSocketNonBlocking(SOCKET socket_fd) {
+    u_long mode = 1;  // 1 to enable non-blocking mode
+    if (ioctlsocket(socket_fd, FIONBIO, &mode) != 0) {
+        std::cerr << "Error setting socket to non-blocking mode!" << std::endl;
+        return false;
+    }
+
+    std::cout << "Socket set to non-blocking mode." << std::endl;
+    return true;
+}
+
 void WinServer::handleClient(SOCKET clientSocket)
 {
     char buffer[1024] = {0};

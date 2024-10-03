@@ -24,6 +24,10 @@ int main() {
         return 1;
     }
 
+    client->getSendSocketBuffer();
+    client->getRecvSocketBuffer();
+
+
     // Receive data from server
     std::string response = client->receiveData();
     if (!response.empty()) {

@@ -14,6 +14,7 @@
 class LinClient : public TCPClient {
 private:
     int clientSocket;
+    struct timeval timeout; // Timeout value for the socket
 
 public:
     LinClient();
@@ -21,6 +22,12 @@ public:
     bool start(const std::string &ip, unsigned short port); // Connect to server
     bool sendData(const std::string &data);                 // Send data to server
     std::string receiveData(size_t maxLength = 1024);       // Receive data from server
+    void setTimeout(int seconds);                           // New API to set the timeout 
+    void getRecvSocketBuffer();    
+    void getSendSocketBuffer();
+    void setRecvSocketBuffer(int recv_size); 
+    void setSendSocketBuffer(int send_size);   
+    bool setSocketNonBlocking();              
     ~LinClient();
 };
 

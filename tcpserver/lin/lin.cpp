@@ -7,6 +7,7 @@
 #include <cstring>
 #include <thread>
 #include <mutex>
+#include <fcntl.h>
 
 using namespace std;
 // Buffer size for receiving messages
@@ -32,6 +33,23 @@ int LinServer::determineThreadPoolSize()
 {
     int concurrency = std::thread::hardware_concurrency();
     return (concurrency > 0) ? concurrency : 4; // Default to 4 if hardware concurrency is unavailable
+}
+
+bool LinServer::setSocketNonBlocking(int socketId) {
+    int flags = fcntl(socketId, F_GETFL, 0);
+    if (flags == -1) {
+        std::cerr << "Error getting socket flags!" << std::endl;
+        return false;
+    }
+
+    flags |= O_NONBLOCK;
+    if (fcntl(socketId, F_SETFL, flags) == -1) {
+        std::cerr << "Error setting socket to non-blocking!" << std::endl;
+        return false;
+    }
+
+    std::cout << "Socket set to non-blocking mode." << std::endl;
+    return true;
 }
 
 void LinServer::handleClient(int client_socket)

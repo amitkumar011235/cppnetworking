@@ -14,6 +14,8 @@ public:
     bool initialize(int port, const std::string &ip_address = "0.0.0.0") override;
     void start() override;
     void handleClient(int client_socket);
+    bool setSocketNonBlocking(int socketId);              
+
 
 private:
     int server_fd;                        // File descriptor for the server socket

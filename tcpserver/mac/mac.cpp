@@ -82,7 +82,7 @@ void MacServer::start() {
         "Content-Type: text/html\r\n"
         "Content-Length: 44\r\n"
         "\r\n"
-        "<html><body><h1>Hello from mac server!</h1></body></html>";
+        "<html><body><h1>Hello from server!</h1></body></html>";
 
     // Send the HTTP response back to the client
     send(new_socket, http_response, strlen(http_response), 0);

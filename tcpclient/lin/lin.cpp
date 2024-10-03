@@ -1,6 +1,7 @@
 #include <iostream>
 #include "lin.h"
 #include "../tcpclient.h"
+#include <fcntl.h>
 
 LinClient::LinClient() : clientSocket(-1) {}
 

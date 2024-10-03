@@ -3,6 +3,7 @@
 
 #include "../tcpserver.h"
 #include <string>
+#include <sys/epoll.h>
 #include "ctpl_stl.h"
 
 class LinServer : public TCPServer
@@ -19,8 +20,14 @@ public:
 
 private:
     int server_fd;                        // File descriptor for the server socket
+    int epoll_fd;                         // File descriptor for epoll
+    std::thread epollThread;              // dedicated thread for epoll_wait()
     static ctpl::thread_pool threadPool;  // Static thread pool shared by all instances
     static int determineThreadPoolSize(); // Helper to determine the thread pool size
+    void handleRecv(int client_socket);
+    void handleSend(int client_socket);
+    void handleError(int client_socket);
+    void epollLoop(); // The dedicated epoll thread
 };
 
 #endif // LINSERVER_H

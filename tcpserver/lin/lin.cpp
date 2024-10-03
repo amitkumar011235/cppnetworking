@@ -13,15 +13,21 @@ using namespace std;
 // Buffer size for receiving messages
 #define BUFFER_SIZE 1024
 
+#define MAX_EVENTS 10
+
 mutex coutMutex; // mutex to sync the output on console . we can comment the lock code.
 
-LinServer::LinServer() : server_fd(-1) {}
+LinServer::LinServer() : server_fd(-1), epoll_fd(-1) {}
 
 LinServer::~LinServer()
 {
     if (server_fd != -1)
     {
         close(server_fd);
+    }
+    if (epollThread.joinable())
+    {
+        epollThread.join();
     }
 }
 
@@ -35,15 +41,18 @@ int LinServer::determineThreadPoolSize()
     return (concurrency > 0) ? concurrency : 4; // Default to 4 if hardware concurrency is unavailable
 }
 
-bool LinServer::setSocketNonBlocking(int socketId) {
+bool LinServer::setSocketNonBlocking(int socketId)
+{
     int flags = fcntl(socketId, F_GETFL, 0);
-    if (flags == -1) {
+    if (flags == -1)
+    {
         std::cerr << "Error getting socket flags!" << std::endl;
         return false;
     }
 
     flags |= O_NONBLOCK;
-    if (fcntl(socketId, F_SETFL, flags) == -1) {
+    if (fcntl(socketId, F_SETFL, flags) == -1)
+    {
         std::cerr << "Error setting socket to non-blocking!" << std::endl;
         return false;
     }
@@ -125,6 +134,13 @@ bool LinServer::initialize(int port, const std::string &ip_address)
         return false;
     }
 
+    epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+    {
+        std::cerr << "Epoll creation failed!" << std::endl;
+        return false;
+    }
+
     // Set up the server address structure
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY; // all available ip addresses
@@ -150,6 +166,7 @@ bool LinServer::initialize(int port, const std::string &ip_address)
 
 void LinServer::start()
 {
+    epollThread = std::thread(&LinServer::epollLoop, this);
     struct sockaddr_in client_address;
     socklen_t addrlen = sizeof(client_address);
     char buffer[BUFFER_SIZE] = {0};
@@ -167,8 +184,75 @@ void LinServer::start()
         }
         std::cout << "Connection accepted!" << std::endl;
 
-        // Submit a task to the thread pool to handle the client
-        threadPool.push([this, client_socket](int thread_id)
-                        { this->handleClient(client_socket); });
+        // Set client socket to non-blocking
+        setSocketNonBlocking(client_socket);
+
+        // Add the new client socket to the epoll set for monitoring
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+        ev.data.fd = client_socket;
+        epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &ev);
+
+        std::cout << "New client connected and added to epoll." << std::endl;
     }
+}
+
+void LinServer::epollLoop()
+{
+    struct epoll_event events[MAX_EVENTS];
+
+    while (true)
+    {
+        int event_count = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        for (int i = 0; i < event_count; i++)
+        {
+            int fd = events[i].data.fd;
+
+            if (events[i].events & EPOLLIN)
+            {
+                // Push to thread pool for receiving data
+                threadPool.push([this, fd](int thread_id)
+                        { this->handleRecv(fd); });
+            }
+            else if (events[i].events & EPOLLOUT)
+            {
+                // Push to thread pool for sending data
+                threadPool.push([this, fd](int thread_id)
+                        { this->handleSend(fd); });
+            }
+            else if (events[i].events & EPOLLERR)
+            {
+                // Handle errors
+                threadPool.push([this, fd](int thread_id)
+                        { this->handleError(fd); });
+            }
+        }
+    }
+}
+
+
+void LinServer::handleRecv(int client_socket) {
+    char buffer[BUFFER_SIZE];
+    int bytesRead = recv(client_socket, buffer, BUFFER_SIZE, 0);
+    if (bytesRead > 0) {
+        std::cout << "Received data from client: " << std::string(buffer, bytesRead) << std::endl;
+
+        // Handle received data, echo it back or process it
+    } else if (bytesRead == 0) {
+        std::cout << "Client disconnected." << std::endl;
+        close(client_socket);
+    } else {
+        std::cerr << "Error in recv." << std::endl;
+    }
+}
+
+void LinServer::handleSend(int client_socket) {
+    // Example: Sending data back to the client (echo or HTTP response)
+    const char* response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello";
+    send(client_socket, response, strlen(response), 0);
+}
+
+void LinServer::handleError(int client_socket) {
+    std::cerr << "Socket error, closing connection." << std::endl;
+    close(client_socket);
 }

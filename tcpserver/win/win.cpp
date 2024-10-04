@@ -9,6 +9,9 @@
 // Initialize the static thread pool using the hardware concurrency
 ctpl::thread_pool WinServer::threadPool(WinServer::determineThreadPoolSize());
 
+WinServer::WinServer() : server_fd(INVALID_SOCKET), iocpHandle(NULL) {}
+
+
 // Helper function to determine the number of threads based on hardware concurrency
 int WinServer::determineThreadPoolSize()
 {
@@ -40,6 +43,12 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
         return false;
     }
 
+    iocpHandle = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+    if (iocpHandle == NULL) {
+        std::cerr << "Failed to create IOCP handle!" << std::endl;
+        return false;
+    }
+
     struct sockaddr_in address;
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
@@ -60,6 +69,16 @@ bool WinServer::initialize(int port, const std::string &ipAddress)
         closesocket(server_fd);
         WSACleanup();
         return false;
+    }
+
+     // Start IOCP worker threads (number of threads based on hardware concurrency)
+    unsigned int numThreads = determineThreadPoolSize();
+
+    for (unsigned int i = 0; i < numThreads; ++i) {
+         // Submit a task to the thread pool to handle the client
+        threadPool.push([this](int thread_id){
+            this->workerThread();
+        });
     }
 
     // Listen for incoming connections
@@ -148,11 +167,93 @@ void WinServer::start()
 
         std::cout << "Connection established!" << std::endl;
 
+         // Set the client socket to non-blocking
+        setSocketNonBlocking(client_socket);
+
+        // Create a PerIoData structure for the client
+        PerIoData* ioData = new PerIoData();
+        ZeroMemory(&ioData->overlapped, sizeof(OVERLAPPED));
+        ioData->clientSocket = client_socket;
+        ioData->wsabuf.buf = ioData->buffer;
+        ioData->wsabuf.len = BUFFER_SIZE;
+
+        // Associate the client socket with the IOCP
+        CreateIoCompletionPort((HANDLE)client_socket, iocpHandle, (ULONG_PTR)client_socket, 0);
+
+        // Post an initial recv request
+        DWORD flags = 0;
+        WSARecv(client_socket, &ioData->wsabuf, 1, NULL, &flags, &ioData->overlapped, NULL);
+
         // Submit a task to the thread pool to handle the client
-        threadPool.push([this, client_socket](int thread_id)
-                        { this->handleClient(client_socket); });
+        // threadPool.push([this, client_socket](int thread_id)
+        //                 { this->handleClient(client_socket); });
     }
 }
+
+
+void WinServer::workerThread() {
+    DWORD bytesTransferred;
+    ULONG_PTR completionKey;
+    LPOVERLAPPED overlapped;
+
+    while (true) {
+        BOOL result = GetQueuedCompletionStatus(iocpHandle, &bytesTransferred, &completionKey, &overlapped, INFINITE);
+        if (!result) {
+            std::cerr << "GetQueuedCompletionStatus failed!" << std::endl;
+            continue;
+        }
+
+        SOCKET clientSocket = (SOCKET)completionKey;
+        PerIoData* ioData = (PerIoData*)overlapped;
+
+        if (bytesTransferred == 0) {
+            std::cerr << "Client disconnected." << std::endl;
+            closesocket(clientSocket);
+            delete ioData;
+            continue;
+        }
+
+        if (ioData->bytesRecv == 0) {
+            // Handle received data
+            handleRecv(ioData);
+        } else {
+            // Handle sent data
+            handleSend(ioData);
+        }
+    }
+}
+
+void WinServer::handleRecv(PerIoData* ioData) {
+    std::cout << "Received data from client: " << std::string(ioData->buffer, ioData->bytesRecv) << std::endl;
+
+    // Echo the data back to the client
+    ioData->wsabuf.buf = ioData->buffer;
+    ioData->wsabuf.len = ioData->bytesRecv;
+    ioData->bytesRecv = 0; // Reset recv size
+
+    // Post a send request
+    DWORD flags = 0;
+    WSASend(ioData->clientSocket, &ioData->wsabuf, 1, NULL, flags, &ioData->overlapped, NULL);
+}
+
+void WinServer::handleSend(PerIoData* ioData) {
+    std::cout << "Sent data to client." << std::endl;
+
+    // Post another recv request
+    ZeroMemory(&ioData->overlapped, sizeof(OVERLAPPED));
+    ioData->wsabuf.buf = ioData->buffer;
+    ioData->wsabuf.len = BUFFER_SIZE;
+
+    DWORD flags = 0;
+    WSARecv(ioData->clientSocket, &ioData->wsabuf, 1, NULL, &flags, &ioData->overlapped, NULL);
+}
+
+void WinServer::handleError(PerIoData* ioData) {
+    std::cerr << "Socket error, closing connection." << std::endl;
+    closesocket(ioData->clientSocket);
+    delete ioData;
+}
+
 
 WinServer::~WinServer()
 {
@@ -161,5 +262,7 @@ WinServer::~WinServer()
     {
         closesocket(server_fd);
     }
+    CloseHandle(iocpHandle);
     WSACleanup();
 }
+

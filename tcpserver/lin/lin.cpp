@@ -8,6 +8,9 @@
 #include <thread>
 #include <mutex>
 #include <fcntl.h>
+#include <ctime>
+#include <cstring>
+#include <errno.h> // For errno
 
 using namespace std;
 // Buffer size for receiving messages
@@ -212,47 +215,167 @@ void LinServer::epollLoop()
             {
                 // Push to thread pool for receiving data
                 threadPool.push([this, fd](int thread_id)
-                        { this->handleRecv(fd); });
+                                { this->handleRecv(fd); });
             }
             else if (events[i].events & EPOLLOUT)
             {
                 // Push to thread pool for sending data
                 threadPool.push([this, fd](int thread_id)
-                        { this->handleSend(fd); });
+                                { this->handleSend(fd); });
             }
             else if (events[i].events & EPOLLERR)
             {
                 // Handle errors
                 threadPool.push([this, fd](int thread_id)
-                        { this->handleError(fd); });
+                                { this->handleError(fd); });
             }
         }
     }
 }
 
+// Function to get the current date and time in HTML format
+std::string LinServer::getDateTimeHTMLResponse()
+{
+    // The HTML content includes a script to display the time based on the client's timezone
+    std::string htmlResponse =
+        "<html><head><title>Echo Server</title></head>"
+        "<body><h1>Echo Server</h1>"
+        "<p>Below is the current time in your timezone:</p>"
+        "<p style='color:red;' id='localTime'></p>"
+        "<script>"
+        "function getLocalTime() {"
+        "  const now = new Date();"
+        "  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', timeZoneName: 'short' };"
+        "  const localTime = now.toLocaleString(undefined, options);"
+        "  document.getElementById('localTime').innerText = localTime;"
+        "}"
+        "window.onload = getLocalTime;"
+        "</script>"
+        "</body></html>";
 
-void LinServer::handleRecv(int client_socket) {
+    std::string httpResponse =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html\r\n"
+        "Content-Length: " +
+        std::to_string(htmlResponse.size()) + "\r\n"
+                                              "\r\n" +
+        htmlResponse;
+
+    return httpResponse;
+}
+
+void LinServer::handleRecv(int client_socket)
+{
+    // Ensure client state is initialized the first time
+    if (clientStates.find(client_socket) == clientStates.end())
+    {
+        clientStates[client_socket] = ClientState(client_socket); // Initialize client state
+    }
+
+    auto &state = clientStates[client_socket]; // Access the client's state
     char buffer[BUFFER_SIZE];
     int bytesRead = recv(client_socket, buffer, BUFFER_SIZE, 0);
-    if (bytesRead > 0) {
-        std::cout << "Received data from client: " << std::string(buffer, bytesRead) << std::endl;
 
-        // Handle received data, echo it back or process it
-    } else if (bytesRead == 0) {
+    if (bytesRead > 0)
+    {
+        // std::cout << "Received data from client: " << std::string(buffer, bytesRead) << std::endl;
+
+        state.recvBuffer.append(buffer, bytesRead);
+
+        // Check if the request is complete (e.g., HTTP would check for \r\n\r\n or content length)
+        if (isRequestComplete(state.client_socket))
+        {
+            // Once the entire request is received, prepare the response
+            // Prepare and send a response (Echo + Date/Time HTML response)
+            std::string response = getDateTimeHTMLResponse();
+            prepareAndSendResponse(client_socket, response);
+        }
+        else
+        {
+            // If the request is incomplete, mark that we're still waiting for more data
+            state.waitingForRecv = true;
+        }
+    }
+    else if (bytesRead == 0)
+    {
         std::cout << "Client disconnected." << std::endl;
         close(client_socket);
-    } else {
-        std::cerr << "Error in recv." << std::endl;
+        clientStates.erase(client_socket); // Clean up state
+    }
+    else
+    {
+        if (errno != EWOULDBLOCK && errno != EAGAIN)
+        {
+            std::cerr << "Error in recv: " << strerror(errno) << std::endl;
+            handleError(client_socket);
+        }
+        else
+        {
+            // more data to recv
+            return;
+        }
     }
 }
 
-void LinServer::handleSend(int client_socket) {
-    // Example: Sending data back to the client (echo or HTTP response)
-    const char* response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nHello";
-    send(client_socket, response, strlen(response), 0);
+void LinServer::handleSend(int client_socket)
+{
+    auto &state = clientStates[client_socket]; // access client state
+
+    if (state.bytesSent < state.sendBuffer.size())
+    {
+        // Calculate how much more data needs to be sent
+        int bytesToSend = state.sendBuffer.size() - state.bytesSent;
+        int bytesSent = send(client_socket, state.sendBuffer.c_str() + state.bytesSent, bytesToSend, 0);
+
+        if (bytesSent > 0)
+        {
+            state.bytesSent += bytesSent; // Update the number of bytes sent so far
+            if (state.bytesSent == state.sendBuffer.size())
+            {
+                // If all data has been sent, reset the state
+                std::cout << "All data sent to client." << std::endl;
+                state.bytesSent = 0;
+                state.sendBuffer.clear();
+                state.waitingForSend = false;
+                state.waitingForRecv = true; // Ready to receive again
+            }
+        }
+        else
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                //wait for the next opportunity to send
+                return;
+            }
+            else
+            {
+                // An error occurred, handle it
+                std::cerr << "Error in send." << std::endl;
+                handleError(client_socket);
+            }
+        }
+    }
 }
 
-void LinServer::handleError(int client_socket) {
+// Prepare the response data and initiate sending process
+void LinServer::prepareAndSendResponse(int client_socket, const std::string &response)
+{
+    auto &clientState = clientStates[client_socket];
+    clientState.client_socket = client_socket;
+    clientState.sendBuffer = response;
+    clientState.bytesSent = 0;
+
+    handleSend(client_socket); // Start sending the data
+}
+
+void LinServer::handleError(int client_socket)
+{
     std::cerr << "Socket error, closing connection." << std::endl;
     close(client_socket);
+}
+
+// Check if the request has been fully received
+bool LinServer::isRequestComplete(int client_socket) {
+    // Example logic: Check if the request ends with "\r\n\r\n"
+    return true;//clientStates[client_socket].recvBuffer.find("\r\n\r\n") != std::string::npos;
 }

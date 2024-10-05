@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <netinet/tcp.h>
 #include <cstring>
 #include <thread>
 #include <mutex>
@@ -157,7 +158,7 @@ bool LinServer::initialize(int port, const std::string &ip_address)
     }
 
     // Start listening for connections
-    if (listen(server_fd, 3) < 0)
+    if (listen(server_fd, SOMAXCONN) < 0)
     {
         std::cerr << "Listen failed!" << std::endl;
         return false;
@@ -165,6 +166,40 @@ bool LinServer::initialize(int port, const std::string &ip_address)
 
     std::cout << "Server initialized on " << ip_address << ":" << port << std::endl;
     return true;
+}
+
+void LinServer::enableKeepAlive(int sockfd)
+{
+    int optval = 1;
+    socklen_t optlen = sizeof(optval);
+    // Enable keep-alive option on the socket
+    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0)
+    {
+        std::cerr << "Failed to enable SO_KEEPALIVE on the socket." << std::endl;
+        return;
+    }
+    // Set the idle time before the first keep-alive probe is sent (in seconds)
+    optval = 10; // 10 seconds
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPIDLE, &optval, optlen) < 0)
+    {
+        std::cerr << "Failed to set TCP_KEEPIDLE." << std::endl;
+        return;
+    }
+    // Set the interval between subsequent keep-alive probes (in seconds)
+    optval = 5; // 5 seconds
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPINTVL, &optval, optlen) < 0)
+    {
+        std::cerr << "Failed to set TCP_KEEPINTVL." << std::endl;
+        return;
+    }
+    // Set the maximum number of failed probes before the connection is considered dead
+    optval = 3; // 3 probes
+    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPCNT, &optval, optlen) < 0)
+    {
+        std::cerr << "Failed to set TCP_KEEPCNT." << std::endl;
+        return;
+    }
+    std::cout << "Keep-alive enabled on the socket with custom settings." << std::endl;
 }
 
 void LinServer::start()
@@ -185,7 +220,7 @@ void LinServer::start()
             std::cerr << "Accept failed! Error: " << strerror(errno) << std::endl;
             continue; // Continue to the next iteration to accept new connections
         }
-        std::cout << "Connection accepted!" << std::endl;
+        //std::cout << "Connection accepted!" << std::endl;
 
         // Set client socket to non-blocking
         setSocketNonBlocking(client_socket);
@@ -196,7 +231,7 @@ void LinServer::start()
         ev.data.fd = client_socket;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &ev);
 
-        std::cout << "New client connected and added to epoll." << std::endl;
+        //std::cout << "New client connected and added to epoll." << std::endl;
     }
 }
 
@@ -344,7 +379,7 @@ void LinServer::handleSend(int client_socket)
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
             {
-                //wait for the next opportunity to send
+                // wait for the next opportunity to send
                 return;
             }
             else
@@ -375,7 +410,8 @@ void LinServer::handleError(int client_socket)
 }
 
 // Check if the request has been fully received
-bool LinServer::isRequestComplete(int client_socket) {
+bool LinServer::isRequestComplete(int client_socket)
+{
     // Example logic: Check if the request ends with "\r\n\r\n"
-    return true;//clientStates[client_socket].recvBuffer.find("\r\n\r\n") != std::string::npos;
+    return true; // clientStates[client_socket].recvBuffer.find("\r\n\r\n") != std::string::npos;
 }

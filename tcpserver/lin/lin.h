@@ -27,9 +27,7 @@ public:
 
     bool initialize(int port, const std::string &ip_address = "0.0.0.0") override;
     void start() override;
-    void handleClient(int client_socket);
-    bool setSocketNonBlocking(int socketId);
-
+    
 private:
     int server_fd;                        // File descriptor for the server socket
     int epoll_fd;                         // File descriptor for epoll
@@ -45,6 +43,9 @@ private:
     void prepareAndSendResponse(int client_socket, const std::string &response);
     std::string getDateTimeHTMLResponse();
     bool isRequestComplete(int client_socket);
+    void enableKeepAlive(int sockfd);
+    void handleClient(int client_socket);
+    bool setSocketNonBlocking(int socketId);
 };
 
 #endif // LINSERVER_H

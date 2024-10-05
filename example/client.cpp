@@ -11,7 +11,7 @@ int main() {
         return 1;
     }
 
-    std::string serverIp = "127.0.0.1";
+    std::string serverIp = "35.154.194.14";
     unsigned short serverPort = 8080;
 
     if (!client->start(serverIp, serverPort)) {
@@ -19,17 +19,17 @@ int main() {
     }
 
     // Send data to server
-    std::string message = "Hello, Server! . Lets see if you can echo";
+    std::string message = "image1.png";
     if (!client->sendData(message)) {
         return 1;
     }
 
-    client->getSendSocketBuffer();
-    client->getRecvSocketBuffer();
+    // client->getSendSocketBuffer();
+    // client->getRecvSocketBuffer();
 
 
     // Receive data from server
-    std::string response = client->receiveData();
+    std::string response = client->recvData();
     if (!response.empty()) {
         std::cout << "Received from server: " << response << std::endl;
     }

@@ -8,8 +8,9 @@ class TCPClient {
 public:
     virtual bool initialize() = 0;                                      // Initialize Winsock
     virtual bool start(const std::string &ip, unsigned short port) = 0; // Connect to server
-    virtual bool sendData(const std::string &data) = 0;                 // Send data to server
+    virtual bool sendData(const std::string &data, int length = -1, const std::string &delimiter = "\r\n\r\n") = 0;  
     virtual string receiveData(size_t maxLength = 1024) = 0;       // Receive data from server
+    virtual string recvData() = 0;                                  // Receive data from server
     virtual void setTimeout(int seconds) = 0;                           // New API to set the timeout 
     virtual void getRecvSocketBuffer() = 0;    
     virtual void getSendSocketBuffer() = 0;

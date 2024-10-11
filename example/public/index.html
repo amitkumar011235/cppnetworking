@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Current Date & Time</title>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #74ebd5, #ACB6E5);
+    }
+
+    .container {
+      text-align: center;
+      background-color: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .date, .time {
+      font-size: 2rem;
+      margin: 10px 0;
+      color: #333;
+    }
+
+    .time {
+      font-weight: bold;
+      font-size: 3rem;
+      color: #2c3e50;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      font-size: 2.5rem;
+      color: #2980b9;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Current Date and Time</h1>
+    <div class="date" id="currentDate"></div>
+    <div class="time" id="currentTime"></div>
+  </div>
+
+  <script>
+    function updateDateTime() {
+      // Get the current date and time
+      const now = new Date();
+      
+      // Format date as 'Day, Month Date, Year'
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      const currentDate = now.toLocaleDateString(undefined, options);
+
+      // Format time as 'HH:MM:SS AM/PM'
+      const currentTime = now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+      // Display the date and time in the HTML
+      document.getElementById('currentDate').innerHTML = currentDate;
+      document.getElementById('currentTime').innerHTML = currentTime;
+    }
+
+    // Update date and time every second
+    setInterval(updateDateTime, 1000);
+
+    // Initial call to display immediately on load
+    updateDateTime();
+  </script>
+
+</body>
+</html>

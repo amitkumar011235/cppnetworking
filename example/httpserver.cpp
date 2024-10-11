@@ -25,17 +25,24 @@ int main()
                      cout << "send all users from thsi route" << endl;
 
                         res.addHeader("header1", "value1");
-                        res.send("this is the bosy of http response");
-                    })
+                        res.setStatus(200, "ok done");
+                        res.send("this is the bosy of http response"); })
             .get("/shops", [](HTTPRequest &req, HTTPResponse &res)
                  {
                      cout << "send all the shops from thsi route" << endl;
-                     res.send("all shops");
+                     res.send("all shops"); })
+            .get("/index.html", [](HTTPRequest &req, HTTPResponse &res)
+                 {
+                     cout << "send the index.html file" << endl;
+                     res.sendFile("./debug" + req.getPath());
+                 })
+            .get("/tictactoe.html", [](HTTPRequest &req, HTTPResponse &res)
+                 {
+                     cout << "send the index.html file" << endl;
+                     res.sendFile("./debug" + req.getPath());
                  })
             .post("/addshop", [](HTTPRequest &req, HTTPResponse &res)
-                  {
-                      res.send("shop added ssuccessfully");
-                  })
+                  { res.send("shop added ssuccessfully"); })
             .listen(PORT, [&]()
                     { cout << "server started listening on port : " << PORT << endl; });
     }

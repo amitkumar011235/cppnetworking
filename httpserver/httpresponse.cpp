@@ -1,5 +1,8 @@
 #include <sstream>
+#include <fstream>
 #include "httpresponse.h"
+
+using namespace std;
 
 // Constructor initializes status code and message to default (200 OK)
 HTTPResponse::HTTPResponse(ClientState &clientState, std::function<void(ClientState&, const std::string&)> sendCallback)
@@ -63,6 +66,52 @@ void HTTPResponse::sendResponse(const std::string &body)
     std::string responseStr = responseStream.str();
 
     sendCallback(state, responseStr);  // Call the send callback function
+}
+
+
+// Send the contents of a file as the HTTP response
+void HTTPResponse::sendFile(const std::string& filePath) {
+    ifstream file(filePath);
+    if (!file.is_open()) {
+        // Send a 404 error if the file is not found
+        addHeader("Content-Type", "text/plain");
+        sendResponse("404 Not Found: Unable to load the requested file.");
+        return;
+    }
+
+    // Read the file content into a string
+    stringstream buffer;
+    buffer << file.rdbuf();
+    string fileContent = buffer.str();
+
+    // Set the content type based on the file extension
+    addHeader("Content-Type", getContentType(filePath));
+
+    sendResponse(fileContent);  
+}
+
+// Helper function to determine content type based on file extension
+std::string HTTPResponse::getContentType(const std::string& filePath) {
+    static std::unordered_map<std::string, std::string> mimeTypes = {
+        {".html", "text/html"},
+        {".css", "text/css"},
+        {".js", "application/javascript"},
+        {".png", "image/png"},
+        {".jpg", "image/jpeg"},
+        {".gif", "image/gif"},
+        // Add more mime types as needed
+    };
+
+    std::size_t dotPos = filePath.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        std::string ext = filePath.substr(dotPos);
+        if (mimeTypes.find(ext) != mimeTypes.end()) {
+            return mimeTypes[ext];
+        }
+    }
+
+    // Default content type
+    return "text/plain";
 }
 
 // Internal method to construct and send the HTTP response without a body

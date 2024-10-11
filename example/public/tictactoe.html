@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tic-Tac-Toe Game</title>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #f8b195, #f67280);
+    }
+
+    .container {
+      text-align: center;
+    }
+
+    h1 {
+      color: #fff;
+      font-size: 3rem;
+      margin-bottom: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      width: 300px;
+      height: 300px;
+    }
+
+    .cell {
+      background-color: #fff;
+      border-radius: 10px;
+      font-size: 2.5rem;
+      font-weight: bold;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.3s;
+    }
+
+    .cell:hover {
+      background-color: #f8b195;
+    }
+
+    .info {
+      color: #fff;
+      font-size: 1.5rem;
+      margin-top: 20px;
+    }
+
+    .reset-btn {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1.2rem;
+      background-color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      transition: background-color 0.3s;
+    }
+
+    .reset-btn:hover {
+      background-color: #f67280;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>Tic-Tac-Toe</h1>
+    <div class="grid" id="grid">
+      <!-- Cells will be generated here -->
+    </div>
+    <div class="info" id="gameInfo"></div>
+    <button class="reset-btn" id="resetBtn">Reset Game</button>
+  </div>
+
+  <script>
+    // JavaScript for the Tic-Tac-Toe game
+    const gridElement = document.getElementById('grid');
+    const gameInfo = document.getElementById('gameInfo');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const cells = [];
+    let currentPlayer = 'X';
+    let gameActive = true;
+    const winPatterns = [
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [0, 3, 6],
+      [1, 4, 7],
+      [2, 5, 8],
+      [0, 4, 8],
+      [2, 4, 6]
+    ];
+
+    function createGrid() {
+      // Create 9 cells for the Tic-Tac-Toe grid
+      for (let i = 0; i < 9; i++) {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        cell.dataset.index = i;
+        cell.addEventListener('click', handleCellClick);
+        gridElement.appendChild(cell);
+        cells.push(cell);
+      }
+    }
+
+    function handleCellClick(event) {
+      const cell = event.target;
+      const cellIndex = cell.dataset.index;
+
+      if (cell.textContent !== '' || !gameActive) {
+        return;
+      }
+
+      cell.textContent = currentPlayer;
+
+      if (checkWinner()) {
+        gameInfo.textContent = `Player ${currentPlayer} Wins!`;
+        gameActive = false;
+      } else if (cells.every(cell => cell.textContent !== '')) {
+        gameInfo.textContent = `It's a Draw!`;
+        gameActive = false;
+      } else {
+        currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+        gameInfo.textContent = `Player ${currentPlayer}'s Turn`;
+      }
+    }
+
+    function checkWinner() {
+      return winPatterns.some(pattern => {
+        const [a, b, c] = pattern;
+        return cells[a].textContent === currentPlayer &&
+               cells[a].textContent === cells[b].textContent &&
+               cells[a].textContent === cells[c].textContent;
+      });
+    }
+
+    function resetGame() {
+      cells.forEach(cell => {
+        cell.textContent = '';
+        cell.style.backgroundColor = '';
+      });
+      currentPlayer = 'X';
+      gameInfo.textContent = `Player ${currentPlayer}'s Turn`;
+      gameActive = true;
+    }
+
+    // Initialize the grid and game state
+    createGrid();
+    gameInfo.textContent = `Player ${currentPlayer}'s Turn`;
+
+    // Reset button listener
+    resetBtn.addEventListener('click', resetGame);
+  </script>
+
+</body>
+</html>

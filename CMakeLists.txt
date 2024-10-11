@@ -7,6 +7,10 @@ project(tcpdemo VERSION 1.0)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
+
 # Detect the platform and define a variable accordingly
 if (WIN32)
     set(PLATFORM_NAME "windows")
@@ -40,6 +44,11 @@ endif()
 
 if (BUILD_TARGET STREQUAL "all" OR BUILD_TARGET STREQUAL "example")
     add_subdirectory(example)
+endif()
+
+# Add subdirectories conditionally based on the BUILD_TARGET option
+if (BUILD_TARGET STREQUAL "all" OR BUILD_TARGET STREQUAL "httpserver")
+    add_subdirectory(httpserver)
 endif()
 
 # print the platform for debug purposes

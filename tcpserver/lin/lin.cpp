@@ -11,13 +11,14 @@
 #include <fcntl.h>
 #include <ctime>
 #include <cstring>
+#include <sstream>
 #include <errno.h> // For errno
 
 using namespace std;
 // Buffer size for receiving messages
 #define BUFFER_SIZE 1024
 
-#define MAX_EVENTS 10
+#define MAX_EVENTS 100
 
 mutex coutMutex; // mutex to sync the output on console . we can comment the lock code.
 
@@ -45,6 +46,28 @@ int LinServer::determineThreadPoolSize()
     return (concurrency > 0) ? concurrency : 4; // Default to 4 if hardware concurrency is unavailable
 }
 
+
+void LinServer::setRecvCallback(httpRecvCallback recvCallback) {
+    this->receiveCallback = recvCallback;
+}
+
+void LinServer::setSendCallback(Callback sendCallback) {
+    this->sendCallback = sendCallback;
+}
+
+void LinServer::setAcceptCallback(Callback acceptCallback) {
+    this->acceptCallback = acceptCallback;
+}
+
+void LinServer::setErrorCallback(Callback errorCallback) {
+    this->errorCallback = errorCallback;
+}
+
+void LinServer::setListenCallback(Callback listenCallback) {
+    this->listenCallback = listenCallback;
+}
+
+
 bool LinServer::setSocketNonBlocking(int socketId)
 {
     int flags = fcntl(socketId, F_GETFL, 0);
@@ -65,58 +88,58 @@ bool LinServer::setSocketNonBlocking(int socketId)
     return true;
 }
 
-void LinServer::handleClient(int client_socket)
-{
-    char buffer[BUFFER_SIZE] = {0};
+// void LinServer::handleClient(int client_socket)
+// {
+//     char buffer[BUFFER_SIZE] = {0};
 
-    // Continue to receive data until the client closes the connection
-    while (true)
-    {
-        // Clear the buffer before receiving new data
-        memset(buffer, 0, sizeof(buffer));
+//     // Continue to receive data until the client closes the connection
+//     while (true)
+//     {
+//         // Clear the buffer before receiving new data
+//         memset(buffer, 0, sizeof(buffer));
 
-        // Receive data from the client
-        int valread = read(client_socket, buffer, BUFFER_SIZE);
+//         // Receive data from the client
+//         int valread = read(client_socket, buffer, BUFFER_SIZE);
 
-        // If the read is less than or equal to 0, the client has closed the connection
-        if (valread <= 0)
-        {
-            std::lock_guard<std::mutex> lock(coutMutex);
-            std::cout << "Client disconnected or error occurred. Closing connection." << std::endl;
-            break; // Exit the loop to close the connection
-        }
+//         // If the read is less than or equal to 0, the client has closed the connection
+//         if (valread <= 0)
+//         {
+//             std::lock_guard<std::mutex> lock(coutMutex);
+//             std::cout << "Client disconnected or error occurred. Closing connection." << std::endl;
+//             break; // Exit the loop to close the connection
+//         }
 
-        // Log the received data
-        {
-            std::lock_guard<std::mutex> lock(coutMutex);
-            std::cout << "Received: " << buffer << std::endl;
-        }
+//         // Log the received data
+//         {
+//             std::lock_guard<std::mutex> lock(coutMutex);
+//             std::cout << "Received: " << buffer << std::endl;
+//         }
 
-        // Prepare the HTTP response
-        std::string http_response =
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/plain\r\n"
-            "Content-Length: " +
-            std::to_string(valread) + "\r\n"
-                                      "\r\n" +
-            std::string(buffer, valread); // Echo the received data
+//         // Prepare the HTTP response
+//         std::string http_response =
+//             "HTTP/1.1 200 OK\r\n"
+//             "Content-Type: text/plain\r\n"
+//             "Content-Length: " +
+//             std::to_string(valread) + "\r\n"
+//                                       "\r\n" +
+//             std::string(buffer, valread); // Echo the received data
 
-        // Send the HTTP response back to the client
-        send(client_socket, http_response.c_str(), http_response.length(), 0);
+//         // Send the HTTP response back to the client
+//         send(client_socket, http_response.c_str(), http_response.length(), 0);
 
-        {
-            std::lock_guard<std::mutex> lock(coutMutex);
-            std::cout << "Echo response sent!" << std::endl;
-        }
-    }
+//         {
+//             std::lock_guard<std::mutex> lock(coutMutex);
+//             std::cout << "Echo response sent!" << std::endl;
+//         }
+//     }
 
-    // Close the connection
-    close(client_socket);
-    {
-        std::lock_guard<std::mutex> lock(coutMutex);
-        std::cout << "Client connection closed." << std::endl;
-    }
-}
+//     // Close the connection
+//     close(client_socket);
+//     {
+//         std::lock_guard<std::mutex> lock(coutMutex);
+//         std::cout << "Client connection closed." << std::endl;
+//     }
+// }
 
 bool LinServer::initialize(int port, const std::string &ip_address)
 {
@@ -164,6 +187,10 @@ bool LinServer::initialize(int port, const std::string &ip_address)
         return false;
     }
 
+    if(listenCallback)
+        listenCallback(server_fd);
+
+    //call the listen callback once everything is good to accept the connection : 
     std::cout << "Server initialized on " << ip_address << ":" << port << std::endl;
     return true;
 }
@@ -227,7 +254,7 @@ void LinServer::start()
 
         // Add the new client socket to the epoll set for monitoring
         struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+        ev.events = EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLET;
         ev.data.fd = client_socket;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &ev);
 
@@ -299,6 +326,40 @@ std::string LinServer::getDateTimeHTMLResponse()
     return httpResponse;
 }
 
+
+// Function to parse headers and extract Content-Length
+size_t LinServer::parseHeaders(int client_socket, const string& data) {
+    auto &state = clientStates[client_socket]; // Access the client's state
+    std::istringstream stream(data);
+    std::string line;
+    size_t content_length = 0;
+
+    // Parse each line of the headers
+    while (std::getline(stream, line) && line != "\r") {
+        if (line.find(": ") != std::string::npos) {
+            auto pos = line.find(": ");
+            std::string key = line.substr(0, pos);
+            std::string value = line.substr(pos + 2);
+            state.headers[key] = value;
+
+            // Look for Content-Length
+            if (key == "Content-Length") {
+                content_length = std::stoul(value);
+            }
+        }
+    }
+    return content_length;
+}
+
+// Function to parse the request line (method, path, version)
+void LinServer::parseRequestLine(int client_socket, const std::string& request_line) {
+    auto &state = clientStates[client_socket]; // Access the client's state
+    std::istringstream stream(request_line);
+    stream>>state.httpMethod;
+    stream>>state.resPath;
+    stream>>state.httpVersion; 
+}
+
 void LinServer::handleRecv(int client_socket)
 {
     // Ensure client state is initialized the first time
@@ -320,10 +381,10 @@ void LinServer::handleRecv(int client_socket)
         // Check if the request is complete (e.g., HTTP would check for \r\n\r\n or content length)
         if (isRequestComplete(state.client_socket))
         {
-            // Once the entire request is received, prepare the response
-            // Prepare and send a response (Echo + Date/Time HTML response)
-            std::string response = getDateTimeHTMLResponse();
-            prepareAndSendResponse(client_socket, response);
+            // Once the entire request is received, send it to the upper layer through callback
+            //we should think whether we want to call the callback in same thread or 
+            //should we push it to the thread pool
+            receiveCallback(state);
         }
         else
         {
@@ -369,10 +430,12 @@ void LinServer::handleSend(int client_socket)
             {
                 // If all data has been sent, reset the state
                 std::cout << "All data sent to client." << std::endl;
-                state.bytesSent = 0;
-                state.sendBuffer.clear();
-                state.waitingForSend = false;
-                state.waitingForRecv = true; // Ready to receive again
+
+                //lets clear the state and close the socket . making http as stateless protocol. remove from the states map
+                state.clear();
+
+                // close(client_socket);
+                // clientStates.erase(client_socket); // Clean up state
             }
         }
         else
@@ -393,25 +456,65 @@ void LinServer::handleSend(int client_socket)
 }
 
 // Prepare the response data and initiate sending process
-void LinServer::prepareAndSendResponse(int client_socket, const std::string &response)
+void LinServer::SendResponse(ClientState& client_state)
 {
-    auto &clientState = clientStates[client_socket];
-    clientState.client_socket = client_socket;
-    clientState.sendBuffer = response;
-    clientState.bytesSent = 0;
-
-    handleSend(client_socket); // Start sending the data
+    handleSend(client_state.client_socket); // Start sending the data
 }
 
 void LinServer::handleError(int client_socket)
 {
     std::cerr << "Socket error, closing connection." << std::endl;
     close(client_socket);
+    clientStates.erase(client_socket); // Clean up state
 }
 
 // Check if the request has been fully received
 bool LinServer::isRequestComplete(int client_socket)
 {
+       auto &state = clientStates[client_socket]; // Access the client's state
+
+        // Step 1: If headers haven't been received yet, extract headers
+        if (!state.isHeadersComplete) {
+            size_t header_end_pos = state.recvBuffer.find("\r\n\r\n");
+
+            if (header_end_pos != std::string::npos) {
+                // Headers received
+                state.isHeadersComplete = true;
+                string headers_data = state.recvBuffer.substr(0, header_end_pos + 4);  // Includes "\r\n\r\n"
+                state.recvBuffer.erase(0, header_end_pos + 4);  // Remove headers from buffer
+
+                // Extract the request line (method, path, version)
+                size_t request_line_end = headers_data.find("\r\n");
+                std::string request_line = headers_data.substr(0, request_line_end);
+                parseRequestLine(client_socket, request_line);
+
+
+                // Extract headers and Content-Length
+                std::string headers_only = headers_data.substr(request_line_end + 2); // Skip the request line
+
+                // Parse headers and extract Content-Length
+                state.contentLength = parseHeaders(client_socket, headers_only);
+            }
+        }
+
+        // Step 2: If headers received and Content-Length is set, wait for the full body
+        if (state.isHeadersComplete && state.contentLength > 0) {
+            if (state.recvBuffer.size() >= state.contentLength) {
+                // Full body received, process the complete request
+                state.body = state.recvBuffer.substr(0, state.contentLength);
+                state.recvBuffer.erase(0, state.contentLength);  // Remove the body from the buffer
+
+                // Call the callback with the complete data (headers + body)
+                state.isRecvComplete = true;
+                return true;
+            }
+        } else if (state.isHeadersComplete && state.contentLength == 0) {
+            // No body (i.e., only headers), process the request now
+            state.isRecvComplete = true;
+            return true;
+        }
+
+
     // Example logic: Check if the request ends with "\r\n\r\n"
-    return true; // clientStates[client_socket].recvBuffer.find("\r\n\r\n") != std::string::npos;
+    return false; // we still need to recv the data. request is not complete yet
 }

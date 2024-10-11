@@ -4,20 +4,10 @@
 #include "../tcpserver.h"
 #include <string>
 #include <sys/epoll.h>
-#include "ctpl_stl.h"
+#include "../ctpl_stl.h"
 #include <unordered_map>
 
-struct ClientState {
-    int client_socket;
-    std::string recvBuffer;  // Buffer for holding incoming data
-    std::string sendBuffer;  // Buffer for holding outgoing data
-    size_t bytesSent;        // Tracks how many bytes have been sent
-    bool waitingForSend;     // True if waiting to send more data
-    bool waitingForRecv;     // True if waiting to receive more data
-
-    ClientState() : client_socket(-1), bytesSent(0), waitingForSend(false), waitingForRecv(true) {}
-    explicit ClientState(int csocket) : client_socket(csocket), bytesSent(0), waitingForSend(false), waitingForRecv(true){}
-};
+using namespace std;
 
 class LinServer : public TCPServer
 {
@@ -27,6 +17,12 @@ public:
 
     bool initialize(int port, const std::string &ip_address = "0.0.0.0") override;
     void start() override;
+    void setRecvCallback(httpRecvCallback recvCallback);
+    void setSendCallback(Callback sendCallback);
+    void setAcceptCallback(Callback acceptCallback);
+    void setErrorCallback(Callback errorCallback);
+    void setListenCallback(Callback listenCallback);
+    void SendResponse(ClientState& client_state);
     
 private:
     int server_fd;                        // File descriptor for the server socket
@@ -35,6 +31,15 @@ private:
     std::unordered_map<int, ClientState> clientStates; 
     std::thread epollThread;              // dedicated thread for epoll_wait()
     static ctpl::thread_pool threadPool;  // Static thread pool shared by all instances
+
+    // Callback function pointers
+    httpRecvCallback receiveCallback;
+    Callback sendCallback;
+    Callback acceptCallback;
+    Callback errorCallback;
+    Callback listenCallback;
+
+
     static int determineThreadPoolSize(); // Helper to determine the thread pool size
     void handleRecv(int client_socket);
     void handleSend(int client_socket);
@@ -44,8 +49,10 @@ private:
     std::string getDateTimeHTMLResponse();
     bool isRequestComplete(int client_socket);
     void enableKeepAlive(int sockfd);
-    void handleClient(int client_socket);
+    //void handleClient(int client_socket);
     bool setSocketNonBlocking(int socketId);
+    size_t parseHeaders(int client_socket, const string& data);
+    void   parseRequestLine(int client_socket, const std::string& request_line);
 };
 
 #endif // LINSERVER_H

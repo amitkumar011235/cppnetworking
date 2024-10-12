@@ -9,7 +9,14 @@ elseif(APPLE)
     set(SERVER_OS_SRC mac/mac.cpp)
 endif()
 
+
+# Find the OpenSSL library.
+find_package(OpenSSL REQUIRED)
+
 # Add tcpserver.cpp
 add_library(tcpserver STATIC tcpserver.cpp ${SERVER_OS_SRC})
+
+# Link the OpenSSL libraries to the target.
+target_link_libraries(tcpserver PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
 target_include_directories(tcpserver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

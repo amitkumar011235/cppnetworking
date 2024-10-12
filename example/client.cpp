@@ -2,6 +2,46 @@
 #include "tcpclient.h"
 
 
+/*
+
+http protocol 
+
+client  : 
+
+request -> 
+
+GET /users HTTP/1.1 \r\n
+Host: www.example.com\r\n
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+Accept:
+text/html,application/xhtml+xml,application/xml;q=0.9,image/webp
+Connection: keep-alive
+content-length: 5\r\n
+\r\n
+hello hi therer
+
+
+
+response :
+
+ HTTP/1.1 200 OK\r\n
+ Date: Tue, 06 Oct 2024 12:34:56 GMT\r\n
+ Server: Apache/2.4.1 (Unix)\r\n
+ Content-Type: text/html
+ Content-Length: 1024\r\n
+ \r\n
+ <html>
+ <head><title>Example Page</title></head>
+ <body><
+
+
+
+server : 
+
+
+*/
+
+
 
 int main() {
     // Create the TCP server using the factory function

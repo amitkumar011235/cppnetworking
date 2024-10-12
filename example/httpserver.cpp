@@ -4,6 +4,13 @@
 
 #include <iostream>
 
+
+ Server Push:
+ HTTP/1.1: The client must request all resources (e.g., HTML, CSS, JavaScript).
+ HTTP/2: Allows the server to “push” resources to the client before it even requests them. For
+ example, if the server knows that a CSS file is needed when sending an HTML file, it can
+ push the CSS file immediately
+
 using namespace std;
 
 int main()
@@ -34,13 +41,15 @@ int main()
             .get("/index.html", [](HTTPRequest &req, HTTPResponse &res)
                  {
                      cout << "send the index.html file" << endl;
-                     res.sendFile("./debug" + req.getPath());
-                 })
+                     res.sendFile("./debug" + req.getPath()); })
             .get("/tictactoe.html", [](HTTPRequest &req, HTTPResponse &res)
                  {
                      cout << "send the index.html file" << endl;
-                     res.sendFile("./debug" + req.getPath());
-                 })
+                     res.sendFile("./debug" + req.getPath()); })
+            .get("/users", [](HTTPRequest &req, HTTPResponse &res)
+                 {
+                     cout << "send all the shops from thsi route" << endl;
+                     res.send("all shops"); })
             .post("/addshop", [](HTTPRequest &req, HTTPResponse &res)
                   { res.send("shop added ssuccessfully"); })
             .listen(PORT, [&]()

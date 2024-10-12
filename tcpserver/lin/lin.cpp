@@ -34,6 +34,9 @@ LinServer::~LinServer()
     {
         epollThread.join();
     }
+
+    SSL_CTX_free(ctx);
+    cleanup_openssl();
 }
 
 // Initialize the static thread pool using the hardware concurrency
@@ -141,11 +144,56 @@ bool LinServer::setSocketNonBlocking(int socketId)
 //     }
 // }
 
+
+// Initialize OpenSSL library.
+void LinServer::init_openssl() {
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+}
+
+// Clean up OpenSSL.
+void LinServer::cleanup_openssl() {
+    EVP_cleanup();
+}
+
+// Create SSL context with TLS.
+SSL_CTX* LinServer::create_ssl_context() {
+    const SSL_METHOD* method = TLS_server_method();  // Use TLS.
+    SSL_CTX* tctx = SSL_CTX_new(method);
+    if (!tctx) {
+        std::cout << "Failed to create SSL context\n";
+        ERR_print_errors_fp(stdout);
+        exit(EXIT_FAILURE);
+    }
+    return tctx;
+}
+
+// Load server certificate and key.
+void LinServer::configure_context() {
+    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) {
+        cout<<"failed to load the server.crt file"<<endl;
+        ERR_print_errors_fp(stdout);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0) {
+        cout<<"failed to load the server.key file"<<endl;
+        ERR_print_errors_fp(stdout);
+        exit(EXIT_FAILURE);
+    }
+}
+
 bool LinServer::initialize(int port, const std::string &ip_address)
 {
     cout << "initialising the server..." << endl;
     struct sockaddr_in address;
     int opt = 1;
+
+
+    // Initialize OpenSSL.
+    init_openssl();
+    ctx = create_ssl_context();
+    configure_context();
 
     // Create socket file descriptor
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
@@ -249,16 +297,36 @@ void LinServer::start()
         }
         //std::cout << "Connection accepted!" << std::endl;
 
+       
+
+
+        // Wrap the client socket with SSL.
+        SSL* ssl = SSL_new(ctx);
+        SSL_set_fd(ssl, client_socket);
+
+         if (SSL_accept(ssl) <= 0) { //this call is performaing ssl/tls handshake
+            cout<<"error in assl accept -> "<<ERR_reason_error_string(ERR_get_error())<<endl;
+            ERR_print_errors_fp(stdout);
+            SSL_free(ssl);
+            close(client_socket);  // Close the socket if handshake fails.
+            continue;
+         }
+
+
+
         // Set client socket to non-blocking
         setSocketNonBlocking(client_socket);
-
         // Add the new client socket to the epoll set for monitoring
         struct epoll_event ev;
         ev.events = EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLET;
         ev.data.fd = client_socket;
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_socket, &ev);
-
         //std::cout << "New client connected and added to epoll." << std::endl;
+
+        //also initialise the client socket state here so that we can store the ssl for this socket to use later
+        clientStates[client_socket] = ClientState(client_socket); // Initialize client state
+        clientStates[client_socket].ssl = ssl;
+
     }
 }
 
@@ -370,7 +438,8 @@ void LinServer::handleRecv(int client_socket)
 
     auto &state = clientStates[client_socket]; // Access the client's state
     char buffer[BUFFER_SIZE];
-    int bytesRead = recv(client_socket, buffer, BUFFER_SIZE, 0);
+    //int bytesRead = recv(client_socket, buffer, BUFFER_SIZE, 0); //this call was for simple http request
+    int bytesRead = SSL_read(state.ssl, buffer, BUFFER_SIZE);
 
     if (bytesRead > 0)
     {
@@ -389,7 +458,7 @@ void LinServer::handleRecv(int client_socket)
         else
         {
             // If the request is incomplete, mark that we're still waiting for more data
-            state.waitingForRecv = true;
+           // state.waitingForRecv = true;
         }
     }
     else if (bytesRead == 0)
@@ -421,7 +490,8 @@ void LinServer::handleSend(int client_socket)
     {
         // Calculate how much more data needs to be sent
         int bytesToSend = state.sendBuffer.size() - state.bytesSent;
-        int bytesSent = send(client_socket, state.sendBuffer.c_str() + state.bytesSent, bytesToSend, 0);
+        //int bytesSent = send(client_socket, state.sendBuffer.c_str() + state.bytesSent, bytesToSend, 0); this api was used for simple http request
+        int bytesSent = SSL_write(state.ssl, state.sendBuffer.c_str() + state.bytesSent, bytesToSend);
 
         if (bytesSent > 0)
         {
@@ -463,7 +533,10 @@ void LinServer::SendResponse(ClientState& client_state)
 
 void LinServer::handleError(int client_socket)
 {
+    auto &state = clientStates[client_socket]; 
     std::cerr << "Socket error, closing connection." << std::endl;
+    SSL_shutdown(state.ssl);
+    SSL_free(state.ssl);
     close(client_socket);
     clientStates.erase(client_socket); // Clean up state
 }

@@ -13,6 +13,7 @@ LinClient::~LinClient()
     }
 }
 
+
 bool LinClient::initialize()
 {
     // No explicit initialization required on Linux

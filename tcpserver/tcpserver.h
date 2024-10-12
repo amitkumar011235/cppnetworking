@@ -5,6 +5,8 @@
 #include <unordered_map>
 #include <functional>
 #include <iostream>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #ifdef PLATFORM_WINDOWS
 #include <winsock2.h>
@@ -21,6 +23,8 @@ struct ClientState
 #elif defined(PLATFORM_MAC)
     int client_socket;
 #endif
+
+    SSL* ssl;                              //storing ssl wrapper for the client_socket
     string recvBuffer;                     // Buffer for holding incoming data
     string sendBuffer;                     // Buffer for holding outgoing data
     size_t bytesSent;                      // Tracks how many bytes have been sent
